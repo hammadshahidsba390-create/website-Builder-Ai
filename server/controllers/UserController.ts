@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
 import openai from '../configs/openai.js';
 import { generateWithFallback } from '../lib/ai.js';
+import { stripe } from '../configs/stripe.js';
 
 // Get user credits 
 export const getusercredits=async (req: Request, res: Response)=>{
@@ -311,9 +312,102 @@ export const togglePublish=async (req: Request, res: Response)=>{
 }
 
 // controller function to purchase credits
+export const purchaseCredits = async (req: Request, res: Response) => {
+    try {
+        const userId = req.userId;
+        const { planId } = req.body;
 
-export const purchaseCredits=async (req: Request, res: Response)=>{
-   
-      
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized user' });
+        }
 
+        const plans: Record<string, { price: number, credits: number, name: string }> = {
+            basic: { price: 500, credits: 100, name: 'Basic Plan' },
+            pro: { price: 1900, credits: 400, name: 'Pro Plan' },
+            enterprise: { price: 4900, credits: 1000, name: 'Enterprise Plan' }
+        };
+
+        const selectedPlan = plans[planId];
+        if (!selectedPlan) {
+            return res.status(400).json({ message: 'Invalid plan selected' });
+        }
+
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            line_items: [
+                {
+                    price_data: {
+                        currency: 'usd',
+                        product_data: {
+                            name: selectedPlan.name,
+                            description: `${selectedPlan.credits} credits for Website AI Builder`,
+                        },
+                        unit_amount: selectedPlan.price,
+                    },
+                    quantity: 1,
+                },
+            ],
+            mode: 'payment',
+            success_url: `${process.env.TRUSTED_ORIGINS || 'http://localhost:5173'}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.TRUSTED_ORIGINS || 'http://localhost:5173'}/pricing`,
+            client_reference_id: userId,
+            metadata: {
+                userId,
+                planId,
+                credits: selectedPlan.credits
+            }
+        });
+
+        res.json({ url: session.url });
+
+    } catch (error: any) {
+        console.log("Stripe Checkout Error:", error);
+        res.status(500).json({ message: error.message });
+    }
+}
+
+// controller function to handle Stripe webhooks
+export const stripeWebhook = async (req: Request, res: Response) => {
+    const sig = req.headers['stripe-signature'];
+
+    if (!sig) {
+        return res.status(400).send('Webhook Error: No signature');
+    }
+
+    let event;
+
+    try {
+        // req.body must be the raw buffer here
+        event = stripe.webhooks.constructEvent(
+            req.body,
+            sig,
+            process.env.STRIPE_WEBHOOK_SECRET as string
+        );
+    } catch (err: any) {
+        console.log(`Webhook signature verification failed:`, err.message);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    if (event.type === 'checkout.session.completed') {
+        const session = event.data.object as any;
+
+        // Fulfill the purchase
+        const userId = session.metadata?.userId;
+        const credits = parseInt(session.metadata?.credits || '0');
+
+        if (userId && credits > 0) {
+            try {
+                await prisma.user.update({
+                    where: { id: userId },
+                    data: { credits: { increment: credits } }
+                });
+                console.log(`Successfully added ${credits} credits to user ${userId}`);
+            } catch (updateError) {
+                console.error('Failed to update user credits:', updateError);
+            }
+        }
+    }
+
+    // Return a 200 response to acknowledge receipt of the event
+    res.json({ received: true });
 }

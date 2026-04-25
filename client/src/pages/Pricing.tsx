@@ -1,6 +1,7 @@
 import React from "react";
 import { appPlans } from "../assets/assets";
 import Footer from "../components/Footer";
+import { authClient } from "../lib/auth-client"; // For getting auth token if needed, or we use standard fetch with credentials
 
 interface Plan {
   id: string;
@@ -15,7 +16,36 @@ const Pricing = () => {
   const [plans] = React.useState<Plan[]>(appPlans);
 
   const handlePurchase = async (planId: string) => {
-    console.log("Selected Plan:", planId);
+    try {
+      // Assuming credentials are sent automatically or we extract session
+      const baseUrl = import.meta.env.VITE_BASEURL || "http://localhost:3000";
+      const { data: session } = await authClient.getSession();
+      
+      if (!session) {
+        alert("Please login to purchase credits.");
+        return;
+      }
+
+      const response = await fetch(`${baseUrl}/api/user/purchase-credits`, {
+        method: "POST",
+        credentials: "include", // Send auth cookies
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ planId }),
+      });
+
+      const data = await response.json();
+
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        alert(data.message || "Failed to initiate checkout");
+      }
+    } catch (error) {
+      console.error("Error during purchase:", error);
+      alert("An error occurred. Please try again.");
+    }
   };
 
   return (
