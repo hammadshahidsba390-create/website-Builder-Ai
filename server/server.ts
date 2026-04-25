@@ -5,9 +5,15 @@ import { toNodeHandler } from 'better-auth/node';
 import { auth } from './lib/auth.js';
 import userRouter from './routes/UserRoutes.js';
 import { getProjectById } from './controllers/projectController.js';
+import { stripeWebhook } from './controllers/UserController.js';
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
+
+// Stripe Webhook MUST use raw body for signature verification
+// Place it BEFORE any express.json() middleware
+app.post('/api/user/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
