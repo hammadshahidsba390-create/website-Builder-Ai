@@ -13,12 +13,18 @@ const Community = () => {
   const fetchProjects = async () => {
     try {
       const res = await fetch(
-        `${import.meta.env.VITE_BASEURL}/api/user/published-projects`,
+        `${import.meta.env.VITE_BASEURL || "http://localhost:3000"}/api/user/published-projects`,
         { credentials: 'include' }
       );
       if (!res.ok) throw new Error('Failed to fetch community projects');
-      const data = await res.json();
-      setProjects(data.projects || []);
+      
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        setProjects(data.projects || []);
+      } else {
+        throw new Error('Expected JSON response but received something else');
+      }
     } catch (error: any) {
       toast.error(error.message || 'Could not load community projects');
     } finally {

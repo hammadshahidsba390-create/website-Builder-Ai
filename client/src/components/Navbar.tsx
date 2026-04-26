@@ -14,7 +14,7 @@ const Navbar = () => {
 
   const fetchCredits = async () => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_BASEURL}/api/user/credits`, {
+      const response = await fetch(`${import.meta.env.VITE_BASEURL || "http://localhost:3000"}/api/user/credits`, {
         headers: {
           'Content-Type': 'application/json',
         },
@@ -22,9 +22,15 @@ const Navbar = () => {
         //@ts-ignore
         credentials: 'include',
       });
-      const data = await response.json();
-      if (data.credits !== undefined) {
-        setCredits(data.credits);
+      
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await response.json();
+        if (data.credits !== undefined) {
+          setCredits(data.credits);
+        }
+      } else {
+        console.warn('Expected JSON response for credits, but received something else.');
       }
     } catch (error) {
       console.error('Error fetching credits:', error);
